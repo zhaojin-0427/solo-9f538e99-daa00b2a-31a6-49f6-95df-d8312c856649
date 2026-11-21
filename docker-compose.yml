@@ -1,0 +1,23 @@
+services:
+  grading-api:
+    build: .
+    image: grading-map-api:latest
+    container_name: grading-map-api
+    ports:
+      - "8000:8000"
+    environment:
+      GRADING_DB_PATH: /data/grading.db
+      GRADING_MAX_FIRST_DIES: "200000"
+      GRADING_DEFAULT_PAGE_SIZE: "500"
+      GRADING_MAX_PAGE_SIZE: "5000"
+    volumes:
+      - grading-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  grading-data:
