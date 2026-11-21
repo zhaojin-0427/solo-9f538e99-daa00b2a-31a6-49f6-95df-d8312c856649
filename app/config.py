@@ -16,6 +16,11 @@ class Settings:
         # 片号、档位字符串长度保护
         self.max_slice_id_len: int = int(os.getenv("GRADING_MAX_SLICE_ID_LEN", "128"))
         self.max_bin_len: int = int(os.getenv("GRADING_MAX_BIN_LEN", "64"))
+        # 下发任务单次取数上限：条数与粒数
+        self.dispatch_max_instructions: int = int(
+            os.getenv("GRADING_DISPATCH_MAX_INSTRUCTIONS", "128")
+        )
+        self.dispatch_max_dies: int = int(os.getenv("GRADING_DISPATCH_MAX_DIES", "4096"))
 
 
 settings = Settings()

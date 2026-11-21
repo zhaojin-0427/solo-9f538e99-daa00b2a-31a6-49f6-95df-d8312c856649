@@ -60,3 +60,45 @@ class SliceInfo(BaseModel):
 
 class ErrorBody(BaseModel):
     detail: str
+
+
+class DispatchTaskRequest(BaseModel):
+    version: int | None = Field(
+        None, description="编排所见图版号；与封存时当前图版不一致返回 409"
+    )
+
+
+class DispatchTaskCreated(BaseModel):
+    task_id: int = Field(..., description="下发任务号，后续取数凭此号")
+    slice_id: str
+    version: int = Field(..., description="任务封存时所见并锁定的片图版号")
+    total_dies: int = Field(..., description="任务覆盖的晶粒总数")
+    instruction_count: int = Field(..., description="封存的指令条数（合并后）")
+
+
+class DispatchTaskInfo(BaseModel):
+    task_id: int
+    slice_id: str
+    version: int
+    total_dies: int
+    instruction_count: int
+
+
+class DispatchInstruction(BaseModel):
+    x: int = Field(..., description="本段首粒 x（可能在原指令中间截开）")
+    y: int = Field(..., description="本段首粒 y（整行同一 y）")
+    step: int = Field(..., description="横向步进方向：1 向右、-1 向左")
+    bin: str = Field(..., description="档位")
+    die_count: int = Field(..., description="本段粒数")
+
+
+class DispatchSegment(BaseModel):
+    task_id: int
+    slice_id: str
+    version: int = Field(..., description="任务封存时的图版号，后续改图不影响本任务")
+    total_dies: int
+    completed_before: int = Field(..., description="本次取数前已累计完成的粒数")
+    completed: int = Field(..., description="执行完本段后的累计完成粒数，直接作为下次的 completed")
+    next_completed: int = Field(..., description="与 completed 同义，便于连续取数")
+    done: bool = Field(..., description="是否已取完整片；已取完时 instructions 为空")
+    instructions: list[DispatchInstruction]

@@ -10,6 +10,8 @@ services:
       GRADING_MAX_FIRST_DIES: "200000"
       GRADING_DEFAULT_PAGE_SIZE: "500"
       GRADING_MAX_PAGE_SIZE: "5000"
+      GRADING_DISPATCH_MAX_INSTRUCTIONS: "128"
+      GRADING_DISPATCH_MAX_DIES: "4096"
     volumes:
       - grading-data:/data
     restart: unless-stopped

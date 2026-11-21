@@ -15,13 +15,14 @@ def client(tmp_path, monkeypatch):
 
     import app.config as config
     import app.database as database
+    import app.dispatch as dispatch
     import app.main as main
     import app.services as services
     import app.csv_utils as csv_utils
     import app.schemas as schemas
     import app.rotation as rotation
 
-    for mod in (config, database, services, csv_utils, schemas, rotation, main):
+    for mod in (config, database, services, csv_utils, schemas, rotation, dispatch, main):
         importlib.reload(mod)
 
     database.init_db()

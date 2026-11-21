@@ -99,6 +99,35 @@ CREATE TABLE IF NOT EXISTS current_map (
     PRIMARY KEY (slice_id, x, y),
     FOREIGN KEY (slice_id) REFERENCES slice(slice_id)
 );
+
+-- 下发任务：封存某一图版（slice.current_ver）排出的指令序列
+CREATE TABLE IF NOT EXISTS dispatch_task (
+    task_id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    slice_id           TEXT NOT NULL,
+    version            INTEGER NOT NULL,
+    total_dies         INTEGER NOT NULL CHECK (total_dies >= 0),
+    instruction_count  INTEGER NOT NULL CHECK (instruction_count >= 0),
+    created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (slice_id) REFERENCES slice(slice_id)
+);
+CREATE INDEX IF NOT EXISTS idx_dispatch_task_slice
+    ON dispatch_task (slice_id, task_id);
+
+-- 任务指令：按走位顺序连续铺满 [0, total_dies)，start_die 为指令首粒的累计偏移
+CREATE TABLE IF NOT EXISTS dispatch_instruction (
+    task_id    INTEGER NOT NULL,
+    seq        INTEGER NOT NULL,
+    start_die  INTEGER NOT NULL,
+    x          INTEGER NOT NULL,
+    y          INTEGER NOT NULL,
+    step       INTEGER NOT NULL CHECK (step IN (-1, 1)),
+    bin        TEXT NOT NULL,
+    die_count  INTEGER NOT NULL CHECK (die_count > 0),
+    PRIMARY KEY (task_id, seq),
+    FOREIGN KEY (task_id) REFERENCES dispatch_task(task_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_dispatch_instruction_start
+    ON dispatch_instruction (task_id, start_die);
 """
 
 

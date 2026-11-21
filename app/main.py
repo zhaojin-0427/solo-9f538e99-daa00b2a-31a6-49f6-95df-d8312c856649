@@ -1,20 +1,26 @@
-"""FastAPI 入口：判级图 API。
+"""FastAPI 入口：判级图与下发任务 API。
 
-交互式文档：启动后访问 /docs ，按片号分开上传首测与复测 CSV。
+交互式文档：启动后访问 /docs ，按片号分开上传首测与复测 CSV，
+并按片号与所见图版生成下发任务，供分拣机凭任务号续取指令。
 """
 from __future__ import annotations
 
 import sqlite3
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, File, Form, Query, UploadFile, status
+from fastapi import Body, Depends, FastAPI, File, Form, Query, UploadFile, status
 
+from . import dispatch as dispatch_service
 from . import services
 from .config import settings
 from .csv_utils import CsvError, parse_die_csv
 from .database import get_conn, init_db
 from .schemas import (
     BatchUploadResponse,
+    DispatchSegment,
+    DispatchTaskCreated,
+    DispatchTaskInfo,
+    DispatchTaskRequest,
     FirstUploadResponse,
     MapPage,
     ReorientResponse,
@@ -35,6 +41,7 @@ app = FastAPI(
         "按晶粒坐标取档位。首测每片一份；复测按批号入库，提交逆时针旋转角，"
         "落点必须全在首测图上。改向带修订号做乐观并发控制，只重算受影响晶粒。"
         "每粒取覆盖它的最高批号档位，无复测覆盖时取首测。"
+        "可按所见图版排成逐行折返的分拣指令并封存，分拣机凭任务号与累计完成粒数续取。"
     ),
     version="1.0.0",
     lifespan=lifespan,
@@ -132,6 +139,83 @@ def get_map(
     return services.get_map_page(conn, slice_id, page, page_size, version)
 
 
+@app.post(
+    "/slices/{slice_id}/tasks",
+    response_model=DispatchTaskCreated,
+    status_code=status.HTTP_201_CREATED,
+    tags=["下发任务"],
+    summary="按片号和所见图版生成下发任务并封存",
+)
+def create_dispatch_task(
+    slice_id: str,
+    version: int | None = Query(
+        None,
+        description="编排所见的图版号；与封存时当前图版不一致返回 409，留空则以快照版本为准",
+    ),
+    seen_version: int | None = Query(
+        None, description="与 version 同义，便于按“所见图版”命名调用"
+    ),
+    payload: DispatchTaskRequest | None = Body(
+        None, description="也可用 JSON 请求体携带 {\"version\": <所见图版>}"
+    ),
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict:
+    _check_slice_id(slice_id)
+    seen = version if version is not None else seen_version
+    if seen is None and payload is not None:
+        seen = payload.version
+    return dispatch_service.create_task(conn, slice_id, seen)
+
+
+@app.get(
+    "/slices/{slice_id}/tasks/{task_id}",
+    response_model=DispatchTaskInfo,
+    tags=["下发任务"],
+    summary="查看已封存任务的元信息",
+)
+def get_dispatch_task(
+    slice_id: str,
+    task_id: int,
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict:
+    _check_slice_id(slice_id)
+    return dispatch_service.get_task(conn, slice_id, task_id)
+
+
+@app.get(
+    "/tasks/{task_id}/instructions",
+    response_model=DispatchSegment,
+    tags=["下发任务"],
+    summary="凭任务号和累计完成粒数续取指令（最多 128 条 / 4096 粒，首尾可截开）",
+)
+def get_dispatch_instructions(
+    task_id: int,
+    completed: int = Query(
+        0, ge=0, description="已累计完成的粒数；从下一粒开始取，越界返回 400"
+    ),
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict:
+    return dispatch_service.get_instructions(conn, task_id, completed)
+
+
+@app.get(
+    "/slices/{slice_id}/tasks/{task_id}/instructions",
+    response_model=DispatchSegment,
+    tags=["下发任务"],
+    summary="按片路径续取指令（与 /tasks/{task_id}/instructions 等价）",
+)
+def get_dispatch_instructions_for_slice(
+    slice_id: str,
+    task_id: int,
+    completed: int = Query(
+        0, ge=0, description="已累计完成的粒数；从下一粒开始取，越界返回 400"
+    ),
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict:
+    _check_slice_id(slice_id)
+    return dispatch_service.get_instructions(conn, task_id, completed, slice_id)
+
+
 @app.get(
     "/slices/{slice_id}",
     response_model=SliceInfo,
@@ -157,6 +241,13 @@ def _check_slice_id(slice_id: str) -> None:
 # 统一业务错误响应，保留语义化 HTTP 状态码
 @app.exception_handler(services.ServiceError)
 def _service_error_handler(request, exc: services.ServiceError):  # noqa: ANN001
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(status_code=exc.http_status, content={"detail": exc.message})
+
+
+@app.exception_handler(dispatch_service.DispatchError)
+def _dispatch_error_handler(request, exc: dispatch_service.DispatchError):  # noqa: ANN001
     from fastapi.responses import JSONResponse
 
     return JSONResponse(status_code=exc.http_status, content={"detail": exc.message})
